@@ -414,7 +414,7 @@ actions.set_query = function (buffer)
 	]]
 	local got_parser, parser = pcall(vim.treesitter.get_parser, buffer);
 
-	if not got_parser or (parser and parser:lang() ~= "markdown") then
+	if not got_parser or not parser or parser:lang() ~= "markdown" then
 		return;
 	end
 
