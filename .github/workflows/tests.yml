@@ -1,0 +1,31 @@
+name: Tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        nvim-version: [stable, nightly]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.nvim-version }}
+      - name: Install markdown tree-sitter parser
+        run: |
+          nvim --headless --noplugin \
+            -c "lua vim.fn.system({'git','clone','--depth=1','https://github.com/MDeiml/tree-sitter-markdown','/tmp/ts-markdown'})" \
+            -c "qa"
+          # Compile and place the parser where Neovim looks for it
+          mkdir -p "$HOME/.local/share/nvim/site/parser"
+          (cd /tmp/ts-markdown/tree-sitter-markdown && \
+            cc -O2 -shared -fPIC -I. src/parser.c src/scanner.c -o "$HOME/.local/share/nvim/site/parser/markdown.so")
+          (cd /tmp/ts-markdown/tree-sitter-markdown-inline && \
+            cc -O2 -shared -fPIC -I. src/parser.c src/scanner.c -o "$HOME/.local/share/nvim/site/parser/markdown_inline.so")
+      - name: Run tests
+        run: make test
