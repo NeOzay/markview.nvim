@@ -209,4 +209,76 @@ T["code_span icon"]["total virt_text chunks for opening went from 2 to 3"] = fun
   expect.equality(#opening[1][4].virt_text, 3)    -- must be the new count
 end
 
+-- ── Fix #503: typst list item marker extmark priority = 150 ─────────────────
+--
+-- BUG: The conceal extmark for a Typst list item marker was placed with the
+--      default priority (~100), which let semantic highlights (priority 125)
+--      overwrite it and prevent concealment. The fix sets priority = 150.
+
+T["typst list item priority"] = new_set({
+  hooks = {
+    pre_once = function()
+      require("markview.spec")
+    end,
+  },
+})
+
+T["typst list item priority"]["conceal extmark has priority >= 150"] = function()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "  - nested item" })
+
+  local typst_renderer = require("markview.renderers.typst")
+
+  local item = {
+    class  = "typst_list_item",
+    marker = "-",
+    indent = 2,
+    text   = { "  - nested item" },
+    range  = { row_start = 0, row_end = 0, col_start = 2, col_end = 15 },
+  }
+
+  typst_renderer.list_item(buf, item)
+
+  local ns_id = vim.api.nvim_get_namespaces()["markview/typst"]
+  local marks  = ns_id and vim.api.nvim_buf_get_extmarks(
+    buf, ns_id, { 0, 0 }, { -1, -1 }, { details = true }
+  ) or {}
+
+  local high_priority = vim.tbl_filter(function(m)
+    return m[4].priority ~= nil and m[4].priority >= 150
+  end, marks)
+
+  expect.equality(#high_priority >= 1, true)
+  vim.api.nvim_buf_delete(buf, { force = true })
+end
+
+T["typst list item priority"]["conceal extmark is a conceal mark"] = function()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "  - nested item" })
+
+  local typst_renderer = require("markview.renderers.typst")
+
+  local item = {
+    class  = "typst_list_item",
+    marker = "-",
+    indent = 2,
+    text   = { "  - nested item" },
+    range  = { row_start = 0, row_end = 0, col_start = 2, col_end = 15 },
+  }
+
+  typst_renderer.list_item(buf, item)
+
+  local ns_id = vim.api.nvim_get_namespaces()["markview/typst"]
+  local marks  = ns_id and vim.api.nvim_buf_get_extmarks(
+    buf, ns_id, { 0, 0 }, { -1, -1 }, { details = true }
+  ) or {}
+
+  local conceal_marks = vim.tbl_filter(function(m)
+    return m[4].conceal ~= nil and m[4].priority ~= nil and m[4].priority >= 150
+  end, marks)
+
+  expect.equality(#conceal_marks >= 1, true)
+  vim.api.nvim_buf_delete(buf, { force = true })
+end
+
 return T

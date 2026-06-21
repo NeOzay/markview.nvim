@@ -48,6 +48,17 @@
 <p align="center">
    A hackable <b>Markdown</b>, <b>HTML</b>, <b>LaTeX</b>, <b>Typst</b> & <b>YAML</b> previewer for Neovim.
 </p>
+
+> **Fork of [OXY2DEV/markview.nvim](https://github.com/OXY2DEV/markview.nvim)** with the following fixes:
+>
+> - Table border rendering at row 0 and after long lines
+> - Obsidian-style links inside tables
+> - Spaces in link sources (`tostring`)
+> - CommonMark flanking rules for emphasis
+> - `:text:` handling for non-emoji sequences
+> - Guard against `nil` parser in `set_query`
+> - Automated test suite (`mini.test` + CI pipeline)
+
 <!--markdoc_ignore_end-->
 
 <div align="center">
