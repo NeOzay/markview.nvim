@@ -9,7 +9,7 @@ local H = require("tests.helpers")
 local T = new_set({
   hooks = {
     post_case = function()
-      vim.cmd("%bwipeout!")
+      vim.cmd("silent %bwipeout!")
     end,
   },
 })
@@ -177,6 +177,134 @@ T["inline"]["inline code span produces node"] = function()
   end, content.markdown_inline or {})
 
   expect.equality(#codes >= 1, true)
+end
+
+T["inline"]["[text](url) produces inline_link_hyperlink node"] = function()
+  local buf = H.setup_buf({ "See [example](https://example.com) here" })
+  local content, _ = require("markview.parser").init(buf, 0, -1, false)
+
+  local links = vim.tbl_filter(function(n)
+    return n.class == "inline_link_hyperlink"
+  end, content.markdown_inline or {})
+
+  expect.equality(#links >= 1, true)
+end
+
+T["inline"]["hyperlink node captures description (URL)"] = function()
+  local buf = H.setup_buf({ "[click](https://example.com)" })
+  local content, _ = require("markview.parser").init(buf, 0, -1, false)
+
+  local links = vim.tbl_filter(function(n)
+    return n.class == "inline_link_hyperlink"
+  end, content.markdown_inline or {})
+
+  expect.equality(#links >= 1, true)
+  expect.equality(links[1].description ~= nil, true)
+  expect.equality(links[1].description:find("example%.com") ~= nil, true)
+end
+
+T["inline"]["hyperlink node captures label (link text)"] = function()
+  local buf = H.setup_buf({ "[my label](https://example.com)" })
+  local content, _ = require("markview.parser").init(buf, 0, -1, false)
+
+  local links = vim.tbl_filter(function(n)
+    return n.class == "inline_link_hyperlink"
+  end, content.markdown_inline or {})
+
+  expect.equality(#links >= 1, true)
+  expect.equality(links[1].label, "my label")
+end
+
+T["inline"]["hyperlink node range is on row 0"] = function()
+  local buf = H.setup_buf({ "[link](https://example.com)" })
+  local content, _ = require("markview.parser").init(buf, 0, -1, false)
+
+  local links = vim.tbl_filter(function(n)
+    return n.class == "inline_link_hyperlink"
+  end, content.markdown_inline or {})
+
+  expect.equality(#links >= 1, true)
+  expect.equality(links[1].range.row_start, 0)
+end
+
+-- ── Images ────────────────────────────────────────────────────────────────────
+
+T["images"] = new_set()
+
+T["images"]["![alt](url) produces inline_link_image node"] = function()
+  local buf = H.setup_buf({ "![alt text](image.png)" })
+  local content, _ = require("markview.parser").init(buf, 0, -1, false)
+
+  local images = vim.tbl_filter(function(n)
+    return n.class == "inline_link_image"
+  end, content.markdown_inline or {})
+
+  expect.equality(#images >= 1, true)
+end
+
+T["images"]["image node captures alt text as label"] = function()
+  local buf = H.setup_buf({ "![my alt](image.png)" })
+  local content, _ = require("markview.parser").init(buf, 0, -1, false)
+
+  local images = vim.tbl_filter(function(n)
+    return n.class == "inline_link_image"
+  end, content.markdown_inline or {})
+
+  expect.equality(#images >= 1, true)
+  expect.equality(images[1].label, "my alt")
+end
+
+T["images"]["image node captures src as description"] = function()
+  local buf = H.setup_buf({ "![alt](photo.jpg)" })
+  local content, _ = require("markview.parser").init(buf, 0, -1, false)
+
+  local images = vim.tbl_filter(function(n)
+    return n.class == "inline_link_image"
+  end, content.markdown_inline or {})
+
+  expect.equality(#images >= 1, true)
+  expect.equality(images[1].description ~= nil, true)
+  expect.equality(images[1].description:find("photo%.jpg") ~= nil, true)
+end
+
+-- ── Nested constructs ─────────────────────────────────────────────────────────
+
+T["nested lists"] = new_set()
+
+T["nested lists"]["indented list item is parsed"] = function()
+  local buf = H.setup_buf({ "- parent", "  - child" })
+  local content, _ = require("markview.parser").init(buf, 0, -1, false)
+
+  local items = vim.tbl_filter(function(n)
+    return n.class and n.class:find("list_item") ~= nil
+  end, content.markdown or {})
+
+  -- both the parent and child item must be present
+  expect.equality(#items >= 2, true)
+end
+
+T["nested lists"]["deeply nested items all parsed"] = function()
+  local buf = H.setup_buf({ "- a", "  - b", "    - c" })
+  local content, _ = require("markview.parser").init(buf, 0, -1, false)
+
+  local items = vim.tbl_filter(function(n)
+    return n.class and n.class:find("list_item") ~= nil
+  end, content.markdown or {})
+
+  expect.equality(#items >= 3, true)
+end
+
+T["nested blockquotes"] = new_set()
+
+T["nested blockquotes"][">> produces at least one block_quote node"] = function()
+  local buf = H.setup_buf({ "> outer", "> > inner" })
+  local content, _ = require("markview.parser").init(buf, 0, -1, false)
+
+  local quotes = vim.tbl_filter(function(n)
+    return n.class and n.class:find("block_quote") ~= nil
+  end, content.markdown or {})
+
+  expect.equality(#quotes >= 1, true)
 end
 
 return T

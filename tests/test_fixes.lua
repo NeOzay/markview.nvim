@@ -14,7 +14,7 @@ local T = new_set({
       md_str.update_cache()
     end,
     post_case = function()
-      vim.cmd("%bwipeout!")
+      vim.cmd("silent %bwipeout!")
     end,
   },
 })

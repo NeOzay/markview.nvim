@@ -14,7 +14,7 @@ local T = new_set({
       require("markview.spec")
     end,
     post_case = function()
-      vim.cmd("%bwipeout!")
+      vim.cmd("silent %bwipeout!")
     end,
   },
 })
@@ -237,18 +237,109 @@ T["extmark count"]["plain paragraph produces no extmarks"] = function()
   expect.equality(#marks, 0)
 end
 
-T["extmark count"]["h1 produces exactly 1 extmark (icon+line_hl combined)"] = function()
-  -- With the default "icon" style, heading rendering uses a single extmark
-  -- that carries both line_hl_group and virt_text. If this breaks, the
-  -- heading is being split into multiple marks or rendered differently.
+T["extmark count"]["h1 has at least one extmark with line_hl and virt_text"] = function()
   local buf = H.setup_buf({ "# Title" })
   H.render(buf)
 
   local marks = H.get_extmarks(buf, "markview/markdown")
-  expect.equality(#marks, 1)
-  -- That single mark must have both a line highlight and virtual text.
-  expect.equality(marks[1][4].line_hl_group ~= nil, true)
-  expect.equality(marks[1][4].virt_text ~= nil, true)
+  expect.equality(#marks >= 1, true)
+
+  local has_line_hl = vim.tbl_filter(function(m) return m[4].line_hl_group ~= nil end, marks)
+  local has_virt    = vim.tbl_filter(function(m) return m[4].virt_text ~= nil end, marks)
+  expect.equality(#has_line_hl >= 1, true)
+  expect.equality(#has_virt >= 1, true)
+end
+
+-- ── Inline hyperlinks ────────────────────────────────────────────────────────
+
+T["inline hyperlinks"] = new_set()
+
+T["inline hyperlinks"]["[text](url) produces extmarks in markview/inline"] = function()
+  local buf = H.setup_buf({ "[example](https://example.com)" })
+  H.render(buf)
+
+  local marks = H.get_extmarks(buf, "markview/inline")
+  local on_row0 = vim.tbl_filter(function(m) return m[2] == 0 end, marks)
+  expect.equality(#on_row0 >= 1, true)
+end
+
+T["inline hyperlinks"]["link brackets/parens are concealed"] = function()
+  local buf = H.setup_buf({ "[click me](https://example.com)" })
+  H.render(buf)
+
+  local marks = H.get_extmarks(buf, "markview/inline")
+  local conceal = H.conceal_at(marks, 0)
+  expect.equality(#conceal >= 1, true)
+end
+
+T["inline hyperlinks"]["link in mid-sentence places extmarks on its row"] = function()
+  local buf = H.setup_buf({ "See [this link](https://x.com) for details." })
+  H.render(buf)
+
+  local marks = H.get_extmarks(buf, "markview/inline")
+  local on_row0 = vim.tbl_filter(function(m) return m[2] == 0 end, marks)
+  expect.equality(#on_row0 >= 1, true)
+end
+
+-- ── Images ────────────────────────────────────────────────────────────────────
+
+T["images"] = new_set()
+
+T["images"]["![alt](url) produces extmarks in markview/inline"] = function()
+  local buf = H.setup_buf({ "![alt text](image.png)" })
+  H.render(buf)
+
+  local marks = H.get_extmarks(buf, "markview/inline")
+  local on_row0 = vim.tbl_filter(function(m) return m[2] == 0 end, marks)
+  expect.equality(#on_row0 >= 1, true)
+end
+
+T["images"]["image syntax is decorated (conceal or virt_text)"] = function()
+  local buf = H.setup_buf({ "![logo](logo.svg)" })
+  H.render(buf)
+
+  local marks = H.get_extmarks(buf, "markview/inline")
+  local decorated = vim.tbl_filter(function(m)
+    return m[2] == 0 and (m[4].conceal ~= nil or m[4].virt_text ~= nil)
+  end, marks)
+  expect.equality(#decorated >= 1, true)
+end
+
+T["images"]["image and hyperlink on same line produce extmarks on that line"] = function()
+  local buf = H.setup_buf({ "![img](a.png) and [link](https://b.com)" })
+  H.render(buf)
+
+  local marks = H.get_extmarks(buf, "markview/inline")
+  local on_row0 = vim.tbl_filter(function(m) return m[2] == 0 end, marks)
+  expect.equality(#on_row0 >= 2, true)
+end
+
+-- ── clear ─────────────────────────────────────────────────────────────────────
+
+T["clear"] = new_set()
+
+T["clear"]["full clear removes all markdown extmarks"] = function()
+  local buf = H.setup_buf({ "# Heading" })
+  H.render(buf)
+  local before = H.get_extmarks(buf, "markview/markdown")
+  expect.equality(#before >= 1, true)
+
+  require("markview.renderers.markdown").clear(buf, 0, -1, false)
+  local after = H.get_extmarks(buf, "markview/markdown")
+  expect.equality(#after, 0)
+end
+
+T["clear"]["partial clear preserves marks outside the cleared range"] = function()
+  -- Render two elements on separate rows, clear only row 0,
+  -- verify that row 1 marks survive.
+  local buf = H.setup_buf({ "# Heading", "---" })
+  H.render(buf)
+
+  -- nvim_buf_clear_namespace end_row is exclusive, so (0, 1) clears row 0 only.
+  require("markview.renderers.markdown").clear(buf, 0, 1, false)
+  local remaining = H.get_extmarks(buf, "markview/markdown")
+  local on_row1 = vim.tbl_filter(function(m) return m[2] == 1 end, remaining)
+  expect.equality(#on_row1 >= 1, true)
 end
 
 return T

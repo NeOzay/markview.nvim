@@ -29,7 +29,7 @@ local WIDE = {
 local T = new_set({
   hooks = {
     post_case = function()
-      vim.cmd("%bwipeout!")
+      vim.cmd("silent %bwipeout!")
     end,
   },
 })
