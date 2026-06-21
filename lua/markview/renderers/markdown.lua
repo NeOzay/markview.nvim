@@ -1739,10 +1739,14 @@ markdown.table = function (buffer, item)
 			if p == #item.header and config.block_decorator == true then
 				local prev_line = range.row_start == 0 and 0 or #vim.api.nvim_buf_get_lines(buffer, range.row_start - 1, range.row_start, false)[1];
 
-				if config.use_virt_lines == true then
+				if config.use_virt_lines == true or range.row_start == 0 then
 					table.insert(tmp, 1, { string.rep(" ", range.col_start) });
-				elseif range.row_start > 0 and prev_line < range.col_start then
+				elseif prev_line < range.col_start then
 					table.insert(tmp, 1, { string.rep(" ", math.max(0, range.col_start - prev_line)) });
+				elseif prev_line > range.col_start then
+					-- prev_line > range.col_start: previous line has content past the
+					-- table start; virt_lines_above needs full indent from column 0
+					table.insert(tmp, 1, { string.rep(" ", range.col_start) });
 				end
 
 				if config.use_virt_lines == true then
@@ -1753,14 +1757,26 @@ markdown.table = function (buffer, item)
 
 						hl_mode = "combine"
 					})
-				elseif item.top_border == true and range.row_start > 0 then
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_start - 1, math.min(range.col_start, prev_line), {
-						undo_restore = false, invalidate = true,
-						virt_text_pos = "inline",
-						virt_text = tmp,
+				elseif item.top_border == true then
+					if range.row_start == 0 or prev_line > range.col_start then
+						-- Table at top of file, or previous line has content past col_start:
+						-- use virt_lines_above to avoid a missing or overlapping top border
+						vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_start, range.col_start, {
+							undo_restore = false, invalidate = true,
+							virt_lines_above = true,
+							virt_lines = { tmp },
 
-						hl_mode = "combine"
-					})
+							hl_mode = "combine"
+						})
+					else
+						vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_start - 1, math.min(range.col_start, prev_line), {
+							undo_restore = false, invalidate = true,
+							virt_text_pos = "inline",
+							virt_text = tmp,
+
+							hl_mode = "combine"
+						})
+					end
 				end
 			end
 		elseif part.class == "missing_seperator" then
@@ -1792,13 +1808,19 @@ markdown.table = function (buffer, item)
 			if p == #item.header and config.block_decorator == true then
 				local prev_line = range.row_start == 0 and 0 or #vim.api.nvim_buf_get_lines(buffer, range.row_start - 1, range.row_start, false)[1];
 
-				if config.use_virt_lines == true then
+				if config.use_virt_lines == true or range.row_start == 0 then
 					table.insert(tmp, 1, {
 						string.rep(" ", range.col_start)
 					});
-				elseif range.row_start > 0 and prev_line < range.col_start then
+				elseif prev_line < range.col_start then
 					table.insert(tmp, 1, {
 						string.rep(" ", math.max(0, range.col_start - prev_line))
+					});
+				elseif prev_line > range.col_start then
+					-- prev_line > range.col_start: previous line has content past the
+					-- table start; virt_lines_above needs full indent from column 0
+					table.insert(tmp, 1, {
+						string.rep(" ", range.col_start)
 					});
 				end
 
@@ -1810,14 +1832,26 @@ markdown.table = function (buffer, item)
 
 						hl_mode = "combine"
 					})
-				elseif range.row_start > 0 and item.top_border == true then
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_start - 1, math.min(prev_line, range.col_start), {
-						undo_restore = false, invalidate = true,
-						virt_text_pos = "inline",
-						virt_text = tmp,
+				elseif item.top_border == true then
+					if range.row_start == 0 or prev_line > range.col_start then
+						-- Table at top of file, or previous line has content past col_start:
+						-- use virt_lines_above to avoid a missing or overlapping top border
+						vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_start, range.col_start, {
+							undo_restore = false, invalidate = true,
+							virt_lines_above = true,
+							virt_lines = { tmp },
 
-						hl_mode = "combine"
-					})
+							hl_mode = "combine"
+						})
+					else
+						vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_start - 1, math.min(prev_line, range.col_start), {
+							undo_restore = false, invalidate = true,
+							virt_text_pos = "inline",
+							virt_text = tmp,
+
+							hl_mode = "combine"
+						})
+					end
 				end
 			end
 		elseif part.class == "column" then
@@ -2301,6 +2335,21 @@ markdown.table = function (buffer, item)
 	c = 1;
 	tmp = {};
 
+	-- Compute once: tree-sitter may over-extend row_end into absorbed plain text.
+	local buf_lines = vim.api.nvim_buf_line_count(buffer);
+	local actual_row_end = range.row_end
+	for r = range.row_end - 1, range.row_start, -1 do
+		local l = vim.api.nvim_buf_get_lines(buffer, r, r + 1, false)[1]
+		if l and l:match("^%s*|") then
+			actual_row_end = r + 1
+			break
+		end
+	end
+	local next_line_str = actual_row_end < buf_lines
+		and (vim.api.nvim_buf_get_lines(buffer, actual_row_end, actual_row_end + 1, false)[1] or "")
+		or ""
+	local next_line = #next_line_str
+
 	for p, part in ipairs(item.rows[#item.rows] or {}) do
 		if part.class == "separator" then
 			local border, border_hl = get_border("row", 2);
@@ -2320,7 +2369,7 @@ markdown.table = function (buffer, item)
 			});
 
 			if is_wrapped == false then
-				vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end - 1, range.col_start + part.col_start, {
+				vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end - 1, range.col_start + part.col_start, {
 					undo_restore = false, invalidate = true,
 					end_col = range.col_start + part.col_end,
 					conceal = "",
@@ -2335,28 +2384,41 @@ markdown.table = function (buffer, item)
 			end
 
 			if p == #item.header and config.block_decorator == true then
-				local next_line = range.row_end == vim.api.nvim_buf_line_count(buffer) and 0 or #vim.api.nvim_buf_get_lines(buffer, range.row_end, range.row_end + 1, false)[1];
-
-				if config.use_virt_lines == true then
+				if config.use_virt_lines == true or next_line > 0 or actual_row_end >= buf_lines then
 					table.insert(tmp, 1, { string.rep(" ", range.col_start) });
-				elseif next_line < vim.api.nvim_buf_line_count(buffer) and  next_line < range.col_start then
+				else
 					table.insert(tmp, 1, { string.rep(" ", math.max(0, range.col_start - next_line)) });
 				end
 
 				if config.use_virt_lines == true then
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end, math.min(next_line, range.col_start), {
+					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end, math.min(next_line, range.col_start), {
 						virt_lines_above = true,
 						virt_lines = { tmp },
 
 						hl_mode = "combine"
 					})
-				elseif range.row_end <= vim.api.nvim_buf_line_count(buffer) and item.bottom_border == true then
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end, math.min(next_line, range.col_start), {
-						virt_text_pos = "inline",
-						virt_text = tmp,
+				elseif item.bottom_border == true then
+					if actual_row_end >= buf_lines then
+						vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end - 1, range.col_start, {
+							virt_lines = { tmp },
 
-						hl_mode = "combine"
-					})
+							hl_mode = "combine"
+						})
+					elseif next_line > 0 then
+						vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end, range.col_start, {
+							virt_lines_above = true,
+							virt_lines = { tmp },
+
+							hl_mode = "combine"
+						})
+					else
+						vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end, math.min(next_line, range.col_start), {
+							virt_text_pos = "inline",
+							virt_text = tmp,
+
+							hl_mode = "combine"
+						})
+					end
 				end
 			end
 		elseif part.class == "missing_seperator" then
@@ -2368,7 +2430,7 @@ markdown.table = function (buffer, item)
 				is_wrapped == true and "@punctuation.special.markdown" or utils.set_hl(bottom_hl)
 			});
 
-			vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end - 1, range.col_start + part.col_start, {
+			vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end - 1, range.col_start + part.col_start, {
 				undo_restore = false, invalidate = true,
 				end_col = range.col_start + part.col_end,
 				conceal = "",
@@ -2389,28 +2451,41 @@ markdown.table = function (buffer, item)
 			})
 
 			if p == #item.header and config.block_decorator == true then
-				local next_line = range.row_end == vim.api.nvim_buf_line_count(buffer) and 0 or #vim.api.nvim_buf_get_lines(buffer, range.row_end, range.row_end + 1, false)[1];
-
-				if config.use_virt_lines == true then
+				if config.use_virt_lines == true or next_line > 0 or actual_row_end >= buf_lines then
 					table.insert(tmp, 1, { string.rep(" ", range.col_start) });
-				elseif next_line < vim.api.nvim_buf_line_count(buffer) and next_line < range.col_start then
+				else
 					table.insert(tmp, 1, { string.rep(" ", math.max(0, range.col_start - next_line)) });
 				end
 
 				if config.use_virt_lines == true then
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end, math.min(next_line, range.col_start), {
+					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end, math.min(next_line, range.col_start), {
 						virt_lines_above = true,
 						virt_lines = { tmp },
 
 						hl_mode = "combine"
 					})
-				elseif range.row_end <= vim.api.nvim_buf_line_count(buffer) and item.bottom_border == true then
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end, math.min(next_line, range.col_start), {
-						virt_text_pos = "inline",
-						virt_text = tmp,
+				elseif item.bottom_border == true then
+					if actual_row_end >= buf_lines then
+						vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end - 1, range.col_start, {
+							virt_lines = { tmp },
 
-						hl_mode = "combine"
-					})
+							hl_mode = "combine"
+						})
+					elseif next_line > 0 then
+						vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end, range.col_start, {
+							virt_lines_above = true,
+							virt_lines = { tmp },
+
+							hl_mode = "combine"
+						})
+					else
+						vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end, math.min(next_line, range.col_start), {
+							virt_text_pos = "inline",
+							virt_text = tmp,
+
+							hl_mode = "combine"
+						})
+					end
 				end
 			end
 		elseif part.class == "column" then
@@ -2422,7 +2497,7 @@ markdown.table = function (buffer, item)
 				local after = string.match(part.text, "%s*$");
 
 				if #before > 1 then
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end - 1, range.col_start + part.col_start + 1, {
+					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end - 1, range.col_start + part.col_start + 1, {
 						undo_restore = false, invalidate = true,
 						end_col = range.col_start + part.col_start + #before,
 						conceal = ""
@@ -2432,7 +2507,7 @@ markdown.table = function (buffer, item)
 				end
 
 				if #after > 1 then
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end - 1, range.col_start + part.col_end - #after, {
+					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end - 1, range.col_start + part.col_end - #after, {
 						undo_restore = false, invalidate = true,
 						end_col = range.col_start + part.col_end - 1,
 						conceal = ""
@@ -2451,7 +2526,7 @@ markdown.table = function (buffer, item)
 
 			if visible_width < column_width then
 				if item.alignments[c] == "default" or item.alignments[c] == "left" then
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end - 1, range.col_start + part.col_end, {
+					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end - 1, range.col_start + part.col_end, {
 						undo_restore = false, invalidate = true,
 						virt_text_pos = "inline",
 						virt_text = {
@@ -2462,7 +2537,7 @@ markdown.table = function (buffer, item)
 						hl_mode = "combine"
 					});
 				elseif item.alignments[c] == "right" then
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end - 1, range.col_start + part.col_start, {
+					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end - 1, range.col_start + part.col_start, {
 						undo_restore = false, invalidate = true,
 						virt_text_pos = "inline",
 						virt_text = {
@@ -2473,7 +2548,7 @@ markdown.table = function (buffer, item)
 						hl_mode = "combine"
 					});
 				else
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end - 1, range.col_start + part.col_start, {
+					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end - 1, range.col_start + part.col_start, {
 						undo_restore = false, invalidate = true,
 						virt_text_pos = "inline",
 						virt_text = {
@@ -2483,7 +2558,7 @@ markdown.table = function (buffer, item)
 						right_gravity = true,
 						hl_mode = "combine"
 					});
-					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_end - 1, range.col_start + part.col_end, {
+					vim.api.nvim_buf_set_extmark(buffer, markdown.ns, actual_row_end - 1, range.col_start + part.col_end, {
 						undo_restore = false, invalidate = true,
 						virt_text_pos = "inline",
 						virt_text = {
