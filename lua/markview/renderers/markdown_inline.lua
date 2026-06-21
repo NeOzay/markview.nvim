@@ -69,7 +69,8 @@ inline.code_span = function (buffer, item, heading_lines)
 		virt_text_pos = "inline",
 		virt_text = {
 			{ config.corner_left or "", utils.set_hl(config.corner_left_hl or config.hl) },
-			{ config.padding_left or "", utils.set_hl(config.padding_left_hl or config.hl) }
+			{ config.padding_left or "", utils.set_hl(config.padding_left_hl or config.hl) },
+			{ config.icon or "", utils.set_hl(config.icon_hl or config.hl) }
 		},
 
 		hl_mode = "combine"

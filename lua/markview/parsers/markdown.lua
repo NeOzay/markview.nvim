@@ -920,7 +920,7 @@ markdown.table = function (_, _, text, range)
 
 			    ::continue::
 			end
-		else
+		elseif row_text:match("^%s*|") then
 			table.insert(rows, line_processor(row_text))
 		end
 	end
