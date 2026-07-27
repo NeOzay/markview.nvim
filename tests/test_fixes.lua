@@ -281,4 +281,34 @@ T["typst list item priority"]["conceal extmark is a conceal mark"] = function()
   vim.api.nvim_buf_delete(buf, { force = true })
 end
 
+-- ── Fix: inline-nested list "- + text" double-bullet (parser/markdown.lua) ───
+--
+-- BUG: For "- + text" on one line, the inner "+" TSNode has col_start=2 but
+--      the parser read text[1] from col 0, detected "-" as marker, set
+--      range.col_start=0. Both the outer "-" and inner "+" placed a bullet at
+--      col 0, rendering "●● + text" instead of "● ● text".
+
+T["inline nested list"] = new_set()
+
+T["inline nested list"]["inner marker detected correctly"] = function()
+  local buf = H.setup_buf({ "- + text" })
+  local content, _ = require("markview.parser").init(buf, 0, -1, false)
+
+  local items = vim.tbl_filter(function(n)
+    return n.class == "markdown_list_item"
+  end, content.markdown or {})
+
+  -- Should have two parsed list items: outer "-" and inner "+"
+  expect.equality(#items >= 2, true)
+
+  local outer = vim.tbl_filter(function(i) return i.marker == "-" end, items)
+  local inner = vim.tbl_filter(function(i) return i.marker == "+" end, items)
+
+  expect.equality(#outer >= 1, true)
+  expect.equality(#inner >= 1, true)
+
+  -- Inner "+" must have col_start=2 (not 0, which caused the double-bullet)
+  expect.equality(inner[1].range.col_start, 2)
+end
+
 return T

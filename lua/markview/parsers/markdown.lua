@@ -438,22 +438,36 @@ markdown.list_item = function (buffer, TSNode, _, range)
 	local tolerance_limit = spec.get({ "experimental", "list_empty_line_tolerance" }) or 3; ---@diagnostic disable-line
 	local marker, before, indent, checkbox;
 
-	if text[1]:match("^[%>%s]*([%-%+%*])%s?") then
-		marker = text[1]:match("^[%>%s]*([%-%+%*])%s?");
-		checkbox = text[1]:match("^[%>%s]*[%-%+%*]%s+%[(.)%]")
-	elseif text[1]:match("^[%>%s]*(%d+[%.%)])%s?") then
-		marker = text[1]:match("^[%>%s]*(%d+[%.%)])%s?");
-		checkbox = text[1]:match("^[%>%s]*%d+[%.%)]%s+%[(.)%]");
+	-- For inline-nested items (e.g. the "+" in "- + text"), the TSNode col_start
+	-- points past the parent marker. Detect this by checking whether non-whitespace
+	-- list-marker chars appear before the node's column in the line.
+	local node_col = range.col_start;
+	local parse_from = 0;
+	if node_col > 0 then
+		local prefix = text[1]:sub(1, node_col);
+		if prefix:match("[%-%+%*%d]") then
+			parse_from = node_col;
+		end
+	end
+
+	local detect_line = parse_from > 0 and text[1]:sub(parse_from + 1) or text[1];
+
+	if detect_line:match("^[%>%s]*([%-%+%*])%s?") then
+		marker = detect_line:match("^[%>%s]*([%-%+%*])%s?");
+		checkbox = detect_line:match("^[%>%s]*[%-%+%*]%s+%[(.)%]")
+	elseif detect_line:match("^[%>%s]*(%d+[%.%)])%s?") then
+		marker = detect_line:match("^[%>%s]*(%d+[%.%)])%s?");
+		checkbox = detect_line:match("^[%>%s]*%d+[%.%)]%s+%[(.)%]");
 	end
 
 	if not marker then
 		return;
 	end
 
-	before = text[1]:match("^[%s%>]*%>") or "";
+	before = detect_line:match("^[%s%>]*%>") or "";
 
 	if before:match("%>$") then
-		local tmp = text[1]:gsub(
+		local tmp = detect_line:gsub(
 			"^" .. vim.pesc(before),
 			""
 		);
@@ -465,10 +479,10 @@ markdown.list_item = function (buffer, TSNode, _, range)
 
 		indent = tmp:match("^%s*");
 	else
-		indent = text[1]:match("^%s*");
+		indent = detect_line:match("^%s*");
 	end
 
-	range.col_start = before:len();
+	range.col_start = parse_from + before:len();
 
 	local list_tolerance, nested_tolerance = 0, 0;
 	local nested_indent = 0;
