@@ -136,10 +136,10 @@ markdown.atx_heading = function (buffer, item)
 	elseif config.style == "icon" then
 		---@cast config markview.config.markdown.headings.atx.icon
 
-		utils.set_extmark(buffer, markdown.ns, range.row_start, range.col_start, {
+		---@type vim.api.keyset.set_extmark
+		local opts = {
 			-- Remove `#+%s*` amount of characters.
 			end_col = range.col_start + #item.marker + (#item.text[1] > #item.marker and 1 or 0),
-			conceal = "",
 
 			sign_text = tostring(config.sign or ""),
 			sign_hl_group = utils.set_hl(config.sign_hl),
@@ -149,7 +149,20 @@ markdown.atx_heading = function (buffer, item)
 				{ icon, config.icon_hl or config.hl },
 			},
 			line_hl_group = utils.set_hl(config.hl),
-		});
+		};
+
+		-- In case the icon is the same size as the raw markers & no shift width is used
+		-- no need to use `inline` virtual text.
+		--
+		-- Ref: #527
+		if shift_width == 0 and vim.fn.strdisplaywidth(icon) == #item.marker then
+			opts.virt_text_pos = "overlay";
+		else
+			opts.virt_text_pos = "inline";
+			opts.conceal = "";
+		end
+
+		utils.set_extmark(buffer, markdown.ns, range.row_start, range.col_start, opts);
 	end
 end
 
@@ -589,7 +602,10 @@ markdown.code_block = function (buffer, item)
 
 		vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_start, top_border.col_start, {
 			virt_text_pos = "inline",
-			virt_text = { label }
+			virt_text = { label },
+
+			sign_text = config.sign == true and decorations.sign or nil,
+			sign_hl_group = utils.set_hl(config.sign_hl or decorations.sign_hl),
 		});
 
 		---|fE
@@ -705,7 +721,8 @@ markdown.code_block = function (buffer, item)
 		---|fE
 	end
 
-	if not win or config.style == "simple" or item.uses_tab or ( vim.o.wrap == true or vim.wo[win].wrap == true ) then
+	-- NOTE: Allow options to be more *flexible*.
+	if item.uses_tab or not win or config.style == "simple" then
 		render_simple();
 	elseif config.style == "block" then
 		render_block()
@@ -1174,18 +1191,31 @@ markdown.list_item = function (buffer, item)
 			end
 		end
 	elseif config.text and config.text ~= "" then
-		vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_start, range.col_start + item.indent, {
-			undo_restore = false, invalidate = true,
+		---@type vim.api.keyset.set_extmark
+		local opts = {
 			end_col = range.col_start + (item.indent + #item.marker),
-			conceal = "",
 
-			virt_text_pos = "inline",
+			undo_restore = false, invalidate = true,
+			hl_mode = "combine",
+
 			virt_text = {
 				{ config.text, utils.set_hl(config.hl) }
 			},
+		};
 
-			hl_mode = "combine"
-		});
+		--[[
+			If the *preview marker* & the *raw marker* have the same `string width`,
+			use an `overlay` extmark instead of an `inline`.
+
+			Ref: #527
+		]]
+		if vim.fn.strdisplaywidth(config.text) == vim.fn.strdisplaywidth(item.marker) then
+			opts.virt_text_pos = "overlay";
+		else
+			opts.virt_text_pos = "inline";
+		end
+
+		vim.api.nvim_buf_set_extmark(buffer, markdown.ns, range.row_start, range.col_start + item.indent, opts);
 	end
 
 	::exit::

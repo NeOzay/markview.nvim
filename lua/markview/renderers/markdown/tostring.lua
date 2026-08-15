@@ -369,6 +369,21 @@ end
 
 ---@param match string
 ---@return string
+md_str.strikethrough = function(match)
+	---|fS
+
+	if string.match(match, "%s+%~%~$") then
+		return match
+	end
+
+	local removed = string.gsub(match, "^%~%~", ""):gsub("%~%~$", "")
+	return removed
+
+	---|fE
+end
+
+---@param match string
+---@return string
 md_str.italic = function(match)
 	---|fS
 
@@ -821,8 +836,16 @@ local emoji = lpeg.C(lpeg.P(":") * emoji_char ^ 1 * lpeg.P(":")) / md_str.emoji
 local hl_content = lpeg.P("\\=") + (1 - lpeg.P("="))
 local hl = lpeg.C(lpeg.P("==") * hl_content ^ 1 * lpeg.P("==")) / md_str.highlight
 
-local tag_char = lpeg.R("az", "AZ", "09") + lpeg.S("_-")
-local tag = lpeg.C(at_valid * lpeg.P("#") * tag_char ^ 1) / md_str.tag
+local strike_content = lpeg.P("\\~") + (1 - lpeg.P("~"))
+local strike = lpeg.C(lpeg.P("~~") * strike_content ^ 1 * lpeg.P("~~")) / md_str.strikethrough
+
+-- Obsidian-style tag: `#` followed by tag characters, only at the start of a
+-- token position (start-of-string or after whitespace, via `at_valid`) and not
+-- part of an internal-link `#^section` (guarded by the trailing `-]]`). Mirrors
+-- the tag parser in `parsers/markdown_inline.lua` so the width computed here
+-- matches what the tag renderer draws (concealed `#` + paddings).
+local tag_char = lpeg.R("09", "az", "AZ") + lpeg.S("_-")
+local tag = lpeg.C(at_valid * lpeg.P("#") * tag_char ^ 1 * -lpeg.P("]]")) / md_str.tag
 
 local any = lpeg.P(1)
 
@@ -830,6 +853,8 @@ local token = escape
 	+ emoji
 	+ entity
 	+ hl
+	+ strike
+	+ tag
 	+ block_ref
 	+ embed
 	+ internal
@@ -842,7 +867,6 @@ local token = escape
 	+ bold_italic
 	+ bold
 	+ italic
-	+ tag
 	+ any
 local inline = lpeg.Cs(token ^ 0)
 
